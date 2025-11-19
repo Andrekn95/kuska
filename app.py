@@ -41,7 +41,7 @@ def obtener_usuarios():
         return jsonify({"status": "error", "message": f"Error al obtener usuarios: {str(e)}"}), 500
 
 # ======================================================
-# USUARIOS - POST (Crear usuario - REGISTRO)
+# USUARIOS - POST (Crear usuario)
 # ======================================================
 @app.route("/usuarios", methods=["POST"])
 def crear_usuario():
@@ -52,10 +52,9 @@ def crear_usuario():
 
         email = data.get("email")
         password = data.get("password")
-        nombre = data.get("nombre")
 
-        if not email or not password or not nombre:
-            return jsonify({"status": "error", "message": "Email, password y nombre son requeridos"}), 400
+        if not email or not password:
+            return jsonify({"status": "error", "message": "Email y password son requeridos"}), 400
 
         # Verificar si el usuario ya existe
         if usuarios.find_one({"email": email}):
@@ -64,7 +63,6 @@ def crear_usuario():
         nuevo_usuario = {
             "email": email,
             "password": password,
-            "nombre": nombre,
             "fecha_creacion": datetime.now(),
             "activo": True
         }
@@ -76,8 +74,7 @@ def crear_usuario():
             "message": "Usuario registrado exitosamente",
             "user": {
                 "id": str(result.inserted_id),
-                "email": email,
-                "nombre": nombre
+                "email": email
             }
         }), 201
         
@@ -112,7 +109,6 @@ def eliminar_usuario(user_id):
 @app.route("/login", methods=["GET"])
 def verificar_login():
     try:
-        # Podrías usar esto para verificar tokens o sesiones
         return jsonify({
             "status": "ok",
             "message": "Servicio de login activo"
@@ -146,7 +142,6 @@ def login():
             "message": "Login exitoso",
             "user": {
                 "id": str(user["_id"]),
-                "nombre": user.get("nombre", ""),
                 "email": user.get("email", "")
             }
         })
@@ -237,34 +232,7 @@ def eliminar_formulario(form_id):
         return jsonify({"status": "error", "message": "ID de formulario inválido"}), 400
 
 # ======================================================
-# REGISTRO - GET (Página de registro)
-# ======================================================
-@app.route("/registro", methods=["GET"])
-def pagina_registro():
-    return jsonify({
-        "status": "ok",
-        "message": "Endpoint de registro activo",
-        "instrucciones": "Use POST /usuarios para registrar un nuevo usuario"
-    })
-
-# ======================================================
-# REGISTRO - POST (Alias para crear usuario)
-# ======================================================
-@app.route("/registro", methods=["POST"])
-def registro():
-    # Reutilizar la función de crear usuario
-    return crear_usuario()
-
-# ======================================================
-# REGISTRO - DELETE (Eliminar registro de usuario)
-# ======================================================
-@app.route("/registro/<user_id>", methods=["DELETE"])
-def eliminar_registro(user_id):
-    # Reutilizar la función de eliminar usuario
-    return eliminar_usuario(user_id)
-
-# ======================================================
-# COMENTARIOS
+# COMENTARIOS - POST (Crear comentario)
 # ======================================================
 @app.route("/comentario", methods=["POST"])
 def guardar_comentario():
@@ -294,6 +262,9 @@ def guardar_comentario():
     except Exception as e:
         return jsonify({"status": "error", "message": f"Error al guardar comentario: {str(e)}"}), 500
 
+# ======================================================
+# COMENTARIOS - GET (Obtener comentarios de un lugar)
+# ======================================================
 @app.route("/comentarios/<lugar_id>", methods=["GET"])
 def obtener_comentarios(lugar_id):
     try:
@@ -311,6 +282,9 @@ def obtener_comentarios(lugar_id):
     except Exception as e:
         return jsonify({"status": "error", "message": f"Error al obtener comentarios: {str(e)}"}), 500
 
+# ======================================================
+# RATING - GET (Obtener promedio de puntuación)
+# ======================================================
 @app.route("/rating/<lugar_id>", methods=["GET"])
 def obtener_rating(lugar_id):
     try:
@@ -358,7 +332,7 @@ if __name__ == "__main__":
     print("   GET  /formularios  - Listar formularios")
     print("   POST /formularios  - Crear formulario")
     print("   DELETE /formularios/:id - Eliminar formulario")
-    print("   GET  /registro     - Página registro")
-    print("   POST /registro     - Registrar usuario")
-    print("   DELETE /registro/:id - Eliminar registro")
+    print("   POST /comentario   - Crear comentario")
+    print("   GET  /comentarios/:id - Obtener comentarios")
+    print("   GET  /rating/:id   - Obtener rating")
     app.run(host="0.0.0.0", port=5000, debug=True)
