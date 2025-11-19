@@ -1,216 +1,178 @@
-from flask import Flask, jsonify, request
+from flask import Flask, request, jsonify
 from flask_cors import CORS
-from bson import ObjectId
-import json
-from datetime import datetime
-
-# Importar la conexión desde database.py
-from database import db
+import sqlite3
+import os
 
 app = Flask(__name__)
 CORS(app)
 
-# Colecciones
-usuarios = db["usuarios"]
-formularios = db["formularios"]
-comentarios = db["comentarios"]
+DB_NAME = "database.db"
 
 
-# ======================================================
-# CONVERTIR OBJECTID AUTOMÁTICAMENTE
-# ======================================================
-class JSONEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, ObjectId):
-            return str(obj)
-        return json.JSONEncoder.default(self, obj)
+# ------------------------------------------------
+# 🔧 CREAR TABLAS SI NO EXISTEN
+# ------------------------------------------------
+def init_db():
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
 
-app.json_encoder = JSONEncoder
+    # Tabla usuarios
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS usuarios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre TEXT NOT NULL,
+            email TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL
+        )
+    ''')
+
+    # Tabla formularios
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS formularios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre TEXT NOT NULL,
+            descripcion TEXT,
+            fecha TEXT
+        )
+    ''')
+
+    conn.commit()
+    conn.close()
 
 
-# ======================================================
-# RUTA PRINCIPAL
-# ======================================================
-@app.route("/")
-def home():
-    return "Backend Kuska funcionando correctamente 🚀"
+init_db()
 
 
-# ======================================================
-# LOGIN
-# ======================================================
+# ------------------------------------------------
+# 🔐 LOGIN
+# ------------------------------------------------
 @app.route("/login", methods=["POST"])
 def login():
-    data = request.get_json()
-
+    data = request.json
     email = data.get("email")
     password = data.get("password")
 
-    user = usuarios.find_one({"email": email, "password": password})
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
 
-    if not user:
-        return jsonify({"status": "error", "message": "Credenciales inválidas"}), 401
+    cursor.execute("SELECT * FROM usuarios WHERE email=? AND password=?", (email, password))
+    user = cursor.fetchone()
+    conn.close()
 
-    return jsonify({
-        "status": "ok",
-        "user": {
-            "id": str(user["_id"]),
-            "nombre": user.get("nombre", ""),
-            "email": user.get("email", "")
-        }
-    })
+    if user:
+        return jsonify({"message": "Login correcto", "usuario": user[1]})
+    else:
+        return jsonify({"error": "Credenciales incorrectas"}), 401
 
 
-# ======================================================
-# REGISTRO
-# ======================================================
-@app.route("/register", methods=["POST"])
-def register():
-    data = request.get_json()
-
-    email = data.get("email")
-    password = data.get("password")
+# ------------------------------------------------
+# 🆕 REGISTRO DE USUARIO
+# ------------------------------------------------
+@app.route("/usuarios", methods=["POST"])
+def register_user():
+    data = request.json
     nombre = data.get("nombre")
+    email = data.get("email")
+    password = data.get("password")
 
-    if usuarios.find_one({"email": email}):
-        return jsonify({"status": "error", "message": "El email ya existe"}), 400
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
 
-    nuevo = {
-        "email": email,
-        "password": password,
-        "nombre": nombre
-    }
-
-    result = usuarios.insert_one(nuevo)
-
-    return jsonify({
-        "status": "ok",
-        "user": {
-            "id": str(result.inserted_id),
-            "email": email,
-            "nombre": nombre
-        }
-    })
+    try:
+        cursor.execute("INSERT INTO usuarios (nombre, email, password) VALUES (?, ?, ?)",
+                       (nombre, email, password))
+        conn.commit()
+        conn.close()
+        return jsonify({"message": "Usuario registrado correctamente"})
+    except sqlite3.IntegrityError:
+        conn.close()
+        return jsonify({"error": "El correo ya existe"}), 400
 
 
-# ======================================================
-# OBTENER TODOS LOS USUARIOS (Nueva Ruta)
-# ======================================================
-@app.route("/usuarios", methods=["GET"])
-def obtener_usuarios():
-    lista = list(usuarios.find({}))
-
-    for u in lista:
-        u["_id"] = str(u["_id"])
-
-    return jsonify({"status": "ok", "usuarios": lista})
-
-
-# ======================================================
-# GUARDAR FORMULARIO (LUGAR)
-# ======================================================
-@app.route("/formulario", methods=["POST"])
-def guardar_formulario():
-    data = request.get_json()
-
-    user_id = data.get("user_id")
-    if not user_id:
-        return jsonify({"status": "error", "message": "Falta user_id"}), 400
-
-    formulario = {
-        "user_id": user_id,
-        "nombre": data.get("nombre"),
-        "telefono": data.get("telefono"),
-        "direccion": data.get("direccion"),
-        "foto": data.get("foto"),
-        "lat": data.get("lat"),
-        "lng": data.get("lng")
-    }
-
-    result = formularios.insert_one(formulario)
-
-    return jsonify({"status": "ok", "id": str(result.inserted_id)})
-
-
-# ======================================================
-# OBTENER FORMULARIO POR USER_ID
-# ======================================================
-@app.route("/formulario/<user_id>", methods=["GET"])
-def obtener_formulario(user_id):
-    form = formularios.find_one({"user_id": user_id})
-
-    if not form:
-        return jsonify({"status": "empty"})
-
-    form["_id"] = str(form["_id"])
-    return jsonify({"status": "ok", "form": form})
-
-
-# ======================================================
-# OBTENER TODOS LOS FORMULARIOS (PÚBLICO)
-# ======================================================
+# ------------------------------------------------
+# 📄 OBTENER TODOS LOS FORMULARIOS
+# ------------------------------------------------
 @app.route("/formularios", methods=["GET"])
-def obtener_todos_formularios():
-    lista = list(formularios.find({}))
+def get_formularios():
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM formularios")
+    data = cursor.fetchall()
+    conn.close()
 
-    for f in lista:
-        f["_id"] = str(f["_id"])
+    formularios = []
+    for f in data:
+        formularios.append({
+            "id": f[0],
+            "nombre": f[1],
+            "descripcion": f[2],
+            "fecha": f[3]
+        })
 
-    return jsonify({"status": "ok", "formularios": lista})
-
-
-# ======================================================
-# GUARDAR COMENTARIO + PUNTUACIÓN
-# ======================================================
-@app.route("/comentario", methods=["POST"])
-def guardar_comentario():
-    data = request.get_json()
-
-    comentario = {
-        "user_id": data.get("user_id"),
-        "lugar_id": data.get("lugar_id"),
-        "comentario": data.get("comentario", ""),
-        "puntuacion": data.get("puntuacion", 0),
-        "fecha": datetime.now().isoformat()
-    }
-
-    result = comentarios.insert_one(comentario)
-
-    return jsonify({"status": "ok", "id": str(result.inserted_id)})
+    return jsonify(formularios)
 
 
-# ======================================================
-# OBTENER COMENTARIOS DE UN LUGAR
-# ======================================================
-@app.route("/comentarios/<lugar_id>", methods=["GET"])
-def obtener_comentarios(lugar_id):
-    lista = list(comentarios.find({"lugar_id": lugar_id}))
+# ------------------------------------------------
+# ➕ CREAR FORMULARIO
+# ------------------------------------------------
+@app.route("/formularios", methods=["POST"])
+def create_formulario():
+    data = request.json
+    nombre = data.get("nombre")
+    descripcion = data.get("descripcion")
+    fecha = data.get("fecha")
 
-    for c in lista:
-        c["_id"] = str(c["_id"])
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO formularios (nombre, descripcion, fecha) VALUES (?, ?, ?)",
+                   (nombre, descripcion, fecha))
+    conn.commit()
+    conn.close()
 
-    return jsonify({"status": "ok", "comentarios": lista})
-
-
-# ======================================================
-# OBTENER PROMEDIO DE PUNTUACIÓN
-# ======================================================
-@app.route("/rating/<lugar_id>", methods=["GET"])
-def obtener_rating(lugar_id):
-    lista = list(comentarios.find({"lugar_id": lugar_id}))
-
-    if not lista:
-        return jsonify({"status": "ok", "promedio": 0})
-
-    total = sum(c.get("puntuacion", 0) for c in lista)
-    promedio = round(total / len(lista), 2)
-
-    return jsonify({"status": "ok", "promedio": promedio})
+    return jsonify({"message": "Formulario creado correctamente"})
 
 
-# ======================================================
-# EJECUCIÓN LOCAL
-# ======================================================
+# ------------------------------------------------
+# ✏️ EDITAR FORMULARIO
+# ------------------------------------------------
+@app.route("/formularios/<int:id>", methods=["PUT"])
+def update_formulario(id):
+    data = request.json
+    nombre = data.get("nombre")
+    descripcion = data.get("descripcion")
+    fecha = data.get("fecha")
+
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE formularios
+        SET nombre=?, descripcion=?, fecha=?
+        WHERE id=?
+    """, (nombre, descripcion, fecha, id))
+    conn.commit()
+    conn.close()
+
+    return jsonify({"message": "Formulario actualizado"})
+
+
+# ------------------------------------------------
+# ❌ ELIMINAR FORMULARIO  (🔥 NUEVO: DELETE)
+# ------------------------------------------------
+@app.route("/formularios/<int:id>", methods=["DELETE"])
+def delete_formulario(id):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM formularios WHERE id=?", (id,))
+    conn.commit()
+    conn.close()
+
+    return jsonify({"message": "Formulario eliminado"})
+
+
+# ------------------------------------------------
+# 🟢 FIX PARA RENDER (PORT DINÁMICO)
+# ------------------------------------------------
 if __name__ == "__main__":
-    print("🚀 Servidor Flask iniciado")
-    app.run(host="0.0.0.0", port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    print(f"🚀 Servidor Flask iniciado en el puerto {port}")
+    app.run(host="0.0.0.0", port=port)
