@@ -3,7 +3,6 @@ from flask_cors import CORS
 from bson import ObjectId
 import json
 from datetime import datetime
-from flask.json.provider import DefaultJSONProvider
 
 # Importar la conexión de database.py
 from database import db  
@@ -16,6 +15,7 @@ usuarios = db["usuarios"]
 formularios = db["formularios"]
 comentarios = db["comentarios"]  # NUEVA COLECCIÓN
 
+
 # --------------------------
 # Convertir ObjectId a string
 # --------------------------
@@ -25,13 +25,8 @@ class JSONEncoder(json.JSONEncoder):
             return str(obj)
         return json.JSONEncoder.default(self, obj)
 
-class CustomJSONProvider(DefaultJSONProvider):
-    def default(self, obj):
-        if isinstance(obj, ObjectId):
-            return str(obj)
-        return super().default(obj)
+app.json_encoder = JSONEncoder
 
-app.json = CustomJSONProvider(app)
 
 # --------------------------
 # RUTA BASE
@@ -136,6 +131,19 @@ def obtener_formulario(user_id):
 
     form["_id"] = str(form["_id"])
     return jsonify({"status": "ok", "form": form})
+
+
+# ======================================================
+#  NUEVO: OBTENER TODOS LOS FORMULARIOS (PÚBLICOS)
+# ======================================================
+@app.route("/formularios", methods=["GET"])
+def obtener_todos_formularios():
+    lista = list(formularios.find({}))
+    
+    for f in lista:
+        f["_id"] = str(f["_id"])
+    
+    return jsonify({"status": "ok", "formularios": lista})
 
 
 # ======================================================
