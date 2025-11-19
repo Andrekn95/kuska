@@ -4,8 +4,8 @@ from bson import ObjectId
 import json
 from datetime import datetime
 
-# Importar la conexión de database.py
-from database import db  
+# Importar la conexión desde database.py
+from database import db
 
 app = Flask(__name__)
 CORS(app)
@@ -16,9 +16,9 @@ formularios = db["formularios"]
 comentarios = db["comentarios"]
 
 
-# --------------------------
-# Convertir ObjectId a string
-# --------------------------
+# ======================================================
+# CONVERTIR OBJECTID AUTOMÁTICAMENTE
+# ======================================================
 class JSONEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, ObjectId):
@@ -28,41 +28,42 @@ class JSONEncoder(json.JSONEncoder):
 app.json_encoder = JSONEncoder
 
 
-# --------------------------
-# RUTA BASE
-# --------------------------
+# ======================================================
+# RUTA PRINCIPAL
+# ======================================================
 @app.route("/")
 def home():
     return "Backend Kuska funcionando correctamente 🚀"
 
 
-# --------------------------
+# ======================================================
 # LOGIN
-# --------------------------
+# ======================================================
 @app.route("/login", methods=["POST"])
 def login():
     data = request.get_json()
+
     email = data.get("email")
     password = data.get("password")
 
     user = usuarios.find_one({"email": email, "password": password})
 
-    if user:
-        return jsonify({
-            "status": "ok",
-            "user": {
-                "id": str(user["_id"]),
-                "nombre": user.get("nombre", ""),
-                "email": user.get("email", "")
-            }
-        })
-    else:
+    if not user:
         return jsonify({"status": "error", "message": "Credenciales inválidas"}), 401
 
+    return jsonify({
+        "status": "ok",
+        "user": {
+            "id": str(user["_id"]),
+            "nombre": user.get("nombre", ""),
+            "email": user.get("email", "")
+        }
+    })
 
-# --------------------------
+
+# ======================================================
 # REGISTRO
-# --------------------------
+# ======================================================
 @app.route("/register", methods=["POST"])
 def register():
     data = request.get_json()
@@ -74,13 +75,13 @@ def register():
     if usuarios.find_one({"email": email}):
         return jsonify({"status": "error", "message": "El email ya existe"}), 400
 
-    new_user = {
+    nuevo = {
         "email": email,
         "password": password,
         "nombre": nombre
     }
 
-    result = usuarios.insert_one(new_user)
+    result = usuarios.insert_one(nuevo)
 
     return jsonify({
         "status": "ok",
@@ -93,26 +94,21 @@ def register():
 
 
 # ======================================================
-# OBTENER TODOS LOS USUARIOS (SIN CONTRASEÑA)
+# OBTENER TODOS LOS USUARIOS (Nueva Ruta)
 # ======================================================
 @app.route("/usuarios", methods=["GET"])
 def obtener_usuarios():
     lista = list(usuarios.find({}))
 
-    usuarios_limpios = []
     for u in lista:
-        usuarios_limpios.append({
-            "id": str(u["_id"]),
-            "email": u.get("email", ""),
-            "nombre": u.get("nombre", "")
-        })
+        u["_id"] = str(u["_id"])
 
-    return jsonify({"status": "ok", "usuarios": usuarios_limpios})
+    return jsonify({"status": "ok", "usuarios": lista})
 
 
-# --------------------------
-# GUARDAR FORMULARIO
-# --------------------------
+# ======================================================
+# GUARDAR FORMULARIO (LUGAR)
+# ======================================================
 @app.route("/formulario", methods=["POST"])
 def guardar_formulario():
     data = request.get_json()
@@ -136,9 +132,9 @@ def guardar_formulario():
     return jsonify({"status": "ok", "id": str(result.inserted_id)})
 
 
-# --------------------------
+# ======================================================
 # OBTENER FORMULARIO POR USER_ID
-# --------------------------
+# ======================================================
 @app.route("/formulario/<user_id>", methods=["GET"])
 def obtener_formulario(user_id):
     form = formularios.find_one({"user_id": user_id})
@@ -151,7 +147,7 @@ def obtener_formulario(user_id):
 
 
 # ======================================================
-# OBTENER TODOS LOS FORMULARIOS (PÚBLICOS)
+# OBTENER TODOS LOS FORMULARIOS (PÚBLICO)
 # ======================================================
 @app.route("/formularios", methods=["GET"])
 def obtener_todos_formularios():
@@ -197,7 +193,7 @@ def obtener_comentarios(lugar_id):
 
 
 # ======================================================
-# OBTENER PROMEDIO DE PUNTUACIÓN DE UN LUGAR
+# OBTENER PROMEDIO DE PUNTUACIÓN
 # ======================================================
 @app.route("/rating/<lugar_id>", methods=["GET"])
 def obtener_rating(lugar_id):
@@ -206,15 +202,15 @@ def obtener_rating(lugar_id):
     if not lista:
         return jsonify({"status": "ok", "promedio": 0})
 
-    total = sum([c.get("puntuacion", 0) for c in lista])
+    total = sum(c.get("puntuacion", 0) for c in lista)
     promedio = round(total / len(lista), 2)
 
     return jsonify({"status": "ok", "promedio": promedio})
 
 
-# --------------------------
-# EJECUCIÓN LOCAL / RENDER
-# --------------------------
+# ======================================================
+# EJECUCIÓN LOCAL
+# ======================================================
 if __name__ == "__main__":
     print("🚀 Servidor Flask iniciado")
     app.run(host="0.0.0.0", port=5000)
