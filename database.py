@@ -1,7 +1,7 @@
 from pymongo import MongoClient
+import os
 
-MONGO_URI = "mongodb+srv://kuska:12345@kuska.eqrybhg.mongodb.net/?retryWrites=true&w=majority&appName=kuska"
+MONGO_URI = os.getenv("MONGO_URI", "TU_URL_MONGO_AQUI")
 
 client = MongoClient(MONGO_URI)
-
-db = client["kuska"]  # nombre de la base de datos
+db = client["kuska"]
