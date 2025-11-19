@@ -231,6 +231,33 @@ def eliminar_formulario(form_id):
     except Exception as e:
         return jsonify({"status": "error", "message": "ID de formulario inválido"}), 400
 
+
+
+# ======================================================
+# FORMULARIO - UPDATE (EDITAR formularios)
+# ======================================================
+
+
+
+@app.route("/formularios/<form_id>", methods=["PUT"])
+def actualizar_formulario(form_id):
+    data = request.get_json()
+    update = {
+        "nombre_comercial": data.get("nombre_comercial"),
+        "tipo": data.get("tipo"),
+        "direccion": data.get("direccion"),
+        "contacto": data.get("contacto"),
+        "email": data.get("email"),
+        "descripcion": data.get("descripcion"),
+        "lat": data.get("lat"),
+        "lng": data.get("lng")
+    }
+    # Eliminar claves None si quieres
+    update = {k: v for k, v in update.items() if v is not None}
+    result = formularios.update_one({"_id": ObjectId(form_id)}, {"$set": update})
+    if result.matched_count == 1:
+        return jsonify({"status":"ok", "message":"Formulario actualizado"})
+    return jsonify({"status":"error", "message":"Formulario no encontrado"}), 404
 # ======================================================
 # COMENTARIOS - POST (Crear comentario)
 # ======================================================
