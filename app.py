@@ -15,14 +15,113 @@ formularios = db["formularios"]
 comentarios = db["comentarios"]
 
 # ======================================================
-# CONVERTIR ObjectId AUTOMÁTICAMENTE
+# RUTA PRINCIPAL
 # ======================================================
 @app.route("/")
 def home():
     return "Backend Kuska funcionando correctamente 🚀"
 
 # ======================================================
-# LOGIN
+# USUARIOS - GET (Obtener todos los usuarios)
+# ======================================================
+@app.route("/usuarios", methods=["GET"])
+def obtener_usuarios():
+    try:
+        lista_usuarios = list(usuarios.find({}, {"password": 0}))  # Excluir passwords
+        
+        for usuario in lista_usuarios:
+            usuario["_id"] = str(usuario["_id"])
+            
+        return jsonify({
+            "status": "ok", 
+            "usuarios": lista_usuarios,
+            "total": len(lista_usuarios)
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Error al obtener usuarios: {str(e)}"}), 500
+
+# ======================================================
+# USUARIOS - POST (Crear usuario - REGISTRO)
+# ======================================================
+@app.route("/usuarios", methods=["POST"])
+def crear_usuario():
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"status": "error", "message": "No se recibieron datos"}), 400
+
+        email = data.get("email")
+        password = data.get("password")
+        nombre = data.get("nombre")
+
+        if not email or not password or not nombre:
+            return jsonify({"status": "error", "message": "Email, password y nombre son requeridos"}), 400
+
+        # Verificar si el usuario ya existe
+        if usuarios.find_one({"email": email}):
+            return jsonify({"status": "error", "message": "El email ya está registrado"}), 400
+
+        nuevo_usuario = {
+            "email": email,
+            "password": password,
+            "nombre": nombre,
+            "fecha_creacion": datetime.now(),
+            "activo": True
+        }
+
+        result = usuarios.insert_one(nuevo_usuario)
+
+        return jsonify({
+            "status": "ok",
+            "message": "Usuario registrado exitosamente",
+            "user": {
+                "id": str(result.inserted_id),
+                "email": email,
+                "nombre": nombre
+            }
+        }), 201
+        
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Error al crear usuario: {str(e)}"}), 500
+
+# ======================================================
+# USUARIOS - DELETE (Eliminar usuario)
+# ======================================================
+@app.route("/usuarios/<user_id>", methods=["DELETE"])
+def eliminar_usuario(user_id):
+    try:
+        if not user_id or user_id == "null":
+            return jsonify({"status": "error", "message": "ID de usuario requerido"}), 400
+
+        result = usuarios.delete_one({"_id": ObjectId(user_id)})
+
+        if result.deleted_count == 0:
+            return jsonify({"status": "error", "message": "Usuario no encontrado"}), 404
+
+        return jsonify({
+            "status": "ok", 
+            "message": "Usuario eliminado exitosamente"
+        })
+        
+    except Exception as e:
+        return jsonify({"status": "error", "message": "ID de usuario inválido"}), 400
+
+# ======================================================
+# LOGIN - GET (Verificar estado de login)
+# ======================================================
+@app.route("/login", methods=["GET"])
+def verificar_login():
+    try:
+        # Podrías usar esto para verificar tokens o sesiones
+        return jsonify({
+            "status": "ok",
+            "message": "Servicio de login activo"
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Error en login: {str(e)}"}), 500
+
+# ======================================================
+# LOGIN - POST (Iniciar sesión)
 # ======================================================
 @app.route("/login", methods=["POST"])
 def login():
@@ -44,6 +143,7 @@ def login():
 
         return jsonify({
             "status": "ok",
+            "message": "Login exitoso",
             "user": {
                 "id": str(user["_id"]),
                 "nombre": user.get("nombre", ""),
@@ -54,52 +154,28 @@ def login():
         return jsonify({"status": "error", "message": f"Error en el servidor: {str(e)}"}), 500
 
 # ======================================================
-# REGISTRO
+# FORMULARIOS - GET (Obtener todos los formularios)
 # ======================================================
-@app.route("/register", methods=["POST"])
-def register():
+@app.route("/formularios", methods=["GET"])
+def obtener_formularios():
     try:
-        data = request.get_json()
-        if not data:
-            return jsonify({"status": "error", "message": "No se recibieron datos"}), 400
+        lista_formularios = list(formularios.find({}))
 
-        email = data.get("email")
-        password = data.get("password")
-        nombre = data.get("nombre")
-
-        if not email or not password or not nombre:
-            return jsonify({"status": "error", "message": "Todos los campos son requeridos"}), 400
-
-        if usuarios.find_one({"email": email}):
-            return jsonify({"status": "error", "message": "El email ya existe"}), 400
-
-        nuevo_usuario = {
-            "email": email,
-            "password": password,
-            "nombre": nombre,
-            "fecha_creacion": datetime.now()
-        }
-
-        result = usuarios.insert_one(nuevo_usuario)
+        for formulario in lista_formularios:
+            formulario["_id"] = str(formulario["_id"])
 
         return jsonify({
-            "status": "ok",
-            "message": "Usuario registrado exitosamente",
-            "user": {
-                "id": str(result.inserted_id),
-                "email": email,
-                "nombre": nombre
-            }
+            "status": "ok", 
+            "formularios": lista_formularios,
+            "total": len(lista_formularios)
         })
     except Exception as e:
-        return jsonify({"status": "error", "message": f"Error en el servidor: {str(e)}"}), 500
+        return jsonify({"status": "error", "message": f"Error al obtener formularios: {str(e)}"}), 500
 
 # ======================================================
-# FORMULARIOS (CRUD COMPLETO)
+# FORMULARIOS - POST (Crear formulario)
 # ======================================================
-
-# 1) CREAR FORMULARIO
-@app.route("/formulario", methods=["POST"])
+@app.route("/formularios", methods=["POST"])
 def crear_formulario():
     try:
         data = request.get_json()
@@ -107,13 +183,20 @@ def crear_formulario():
             return jsonify({"status": "error", "message": "No se recibieron datos"}), 400
 
         if not data.get("user_id"):
-            return jsonify({"status": "error", "message": "Falta user_id"}), 400
+            return jsonify({"status": "error", "message": "user_id es requerido"}), 400
 
         nuevo_formulario = {
             "user_id": data.get("user_id"),
-            "nombre": data.get("nombre"),
-            "telefono": data.get("telefono"),
+            "nombre_comercial": data.get("nombre_comercial"),
+            "tipo": data.get("tipo"),
             "direccion": data.get("direccion"),
+            "contacto": data.get("contacto"),
+            "fijo": data.get("fijo"),
+            "email": data.get("email"),
+            "ubicacion": data.get("ubicacion"),
+            "descripcion": data.get("descripcion"),
+            "web": data.get("web"),
+            "habitaciones": data.get("habitaciones"),
             "foto": data.get("foto", ""),
             "lat": data.get("lat", 0),
             "lng": data.get("lng", 0),
@@ -126,57 +209,59 @@ def crear_formulario():
             "status": "ok", 
             "message": "Formulario creado exitosamente",
             "id": str(result.inserted_id)
-        })
-    except Exception as e:
-        return jsonify({"status": "error", "message": f"Error en el servidor: {str(e)}"}), 500
-
-# 2) OBTENER FORMULARIO POR ID
-@app.route("/formulario/<form_id>", methods=["GET"])
-def obtener_formulario(form_id):
-    try:
-        if not form_id or form_id == "null":
-            return jsonify({"status": "error", "message": "ID inválido"}), 400
-
-        form = formularios.find_one({"_id": ObjectId(form_id)})
-        
-        if not form:
-            return jsonify({"status": "error", "message": "Formulario no encontrado"}), 404
-
-        form["_id"] = str(form["_id"])
-        return jsonify({"status": "ok", "form": form})
+        }), 201
         
     except Exception as e:
-        return jsonify({"status": "error", "message": "ID inválido"}), 400
+        return jsonify({"status": "error", "message": f"Error al crear formulario: {str(e)}"}), 500
 
-# 3) OBTENER TODOS LOS FORMULARIOS
-@app.route("/formularios", methods=["GET"])
-def obtener_todos_formularios():
-    try:
-        lista = list(formularios.find({}))
-
-        for f in lista:
-            f["_id"] = str(f["_id"])
-
-        return jsonify({"status": "ok", "formularios": lista})
-    except Exception as e:
-        return jsonify({"status": "error", "message": f"Error al obtener formularios: {str(e)}"}), 500
-
-# 4) ELIMINAR FORMULARIO POR ID
-@app.route("/formulario/<form_id>", methods=["DELETE"])
+# ======================================================
+# FORMULARIOS - DELETE (Eliminar formulario)
+# ======================================================
+@app.route("/formularios/<form_id>", methods=["DELETE"])
 def eliminar_formulario(form_id):
     try:
         if not form_id:
-            return jsonify({"status": "error", "message": "ID requerido"}), 400
+            return jsonify({"status": "error", "message": "ID de formulario requerido"}), 400
 
         result = formularios.delete_one({"_id": ObjectId(form_id)})
 
         if result.deleted_count == 0:
             return jsonify({"status": "error", "message": "Formulario no encontrado"}), 404
 
-        return jsonify({"status": "ok", "message": "Formulario eliminado"})
+        return jsonify({
+            "status": "ok", 
+            "message": "Formulario eliminado exitosamente"
+        })
         
     except Exception as e:
-        return jsonify({"status": "error", "message": "ID inválido"}), 400
+        return jsonify({"status": "error", "message": "ID de formulario inválido"}), 400
+
+# ======================================================
+# REGISTRO - GET (Página de registro)
+# ======================================================
+@app.route("/registro", methods=["GET"])
+def pagina_registro():
+    return jsonify({
+        "status": "ok",
+        "message": "Endpoint de registro activo",
+        "instrucciones": "Use POST /usuarios para registrar un nuevo usuario"
+    })
+
+# ======================================================
+# REGISTRO - POST (Alias para crear usuario)
+# ======================================================
+@app.route("/registro", methods=["POST"])
+def registro():
+    # Reutilizar la función de crear usuario
+    return crear_usuario()
+
+# ======================================================
+# REGISTRO - DELETE (Eliminar registro de usuario)
+# ======================================================
+@app.route("/registro/<user_id>", methods=["DELETE"])
+def eliminar_registro(user_id):
+    # Reutilizar la función de eliminar usuario
+    return eliminar_usuario(user_id)
 
 # ======================================================
 # COMENTARIOS
@@ -209,9 +294,6 @@ def guardar_comentario():
     except Exception as e:
         return jsonify({"status": "error", "message": f"Error al guardar comentario: {str(e)}"}), 500
 
-# ======================================================
-# OBTENER COMENTARIOS DE UN LUGAR
-# ======================================================
 @app.route("/comentarios/<lugar_id>", methods=["GET"])
 def obtener_comentarios(lugar_id):
     try:
@@ -222,7 +304,6 @@ def obtener_comentarios(lugar_id):
 
         for c in lista:
             c["_id"] = str(c["_id"])
-            # Convertir fecha a string si es necesario
             if isinstance(c.get("fecha"), datetime):
                 c["fecha"] = c["fecha"].isoformat()
 
@@ -230,9 +311,6 @@ def obtener_comentarios(lugar_id):
     except Exception as e:
         return jsonify({"status": "error", "message": f"Error al obtener comentarios: {str(e)}"}), 500
 
-# ======================================================
-# OBTENER PROMEDIO DE PUNTUACIÓN
-# ======================================================
 @app.route("/rating/<lugar_id>", methods=["GET"])
 def obtener_rating(lugar_id):
     try:
@@ -256,7 +334,7 @@ def obtener_rating(lugar_id):
         return jsonify({"status": "error", "message": f"Error al calcular rating: {str(e)}"}), 500
 
 # ======================================================
-# MANEJO DE ERRORES GLOBAL
+# MANEJO DE ERRORES
 # ======================================================
 @app.errorhandler(404)
 def not_found(error):
@@ -267,9 +345,20 @@ def internal_error(error):
     return jsonify({"status": "error", "message": "Error interno del servidor"}), 500
 
 # ======================================================
-# EJECUCIÓN LOCAL
+# EJECUCIÓN
 # ======================================================
 if __name__ == "__main__":
     print("🚀 Servidor Flask iniciado en http://0.0.0.0:5000")
-    print("📊 Colecciones disponibles: usuarios, formularios, comentarios")
+    print("📊 Endpoints disponibles:")
+    print("   GET  /usuarios     - Listar usuarios")
+    print("   POST /usuarios     - Crear usuario")
+    print("   DELETE /usuarios/:id - Eliminar usuario")
+    print("   GET  /login        - Verificar login")
+    print("   POST /login        - Iniciar sesión")
+    print("   GET  /formularios  - Listar formularios")
+    print("   POST /formularios  - Crear formulario")
+    print("   DELETE /formularios/:id - Eliminar formulario")
+    print("   GET  /registro     - Página registro")
+    print("   POST /registro     - Registrar usuario")
+    print("   DELETE /registro/:id - Eliminar registro")
     app.run(host="0.0.0.0", port=5000, debug=True)
