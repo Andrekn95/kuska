@@ -13,7 +13,7 @@ CORS(app)
 # Colecciones
 usuarios = db["usuarios"]
 formularios = db["formularios"]
-comentarios = db["comentarios"]  # NUEVA COLECCIÓN
+comentarios = db["comentarios"]
 
 
 # --------------------------
@@ -92,15 +92,32 @@ def register():
     })
 
 
+# ======================================================
+# OBTENER TODOS LOS USUARIOS (SIN CONTRASEÑA)
+# ======================================================
+@app.route("/usuarios", methods=["GET"])
+def obtener_usuarios():
+    lista = list(usuarios.find({}))
+
+    usuarios_limpios = []
+    for u in lista:
+        usuarios_limpios.append({
+            "id": str(u["_id"]),
+            "email": u.get("email", ""),
+            "nombre": u.get("nombre", "")
+        })
+
+    return jsonify({"status": "ok", "usuarios": usuarios_limpios})
+
+
 # --------------------------
-# GUARDAR FORMULARIO (LUGAR)
+# GUARDAR FORMULARIO
 # --------------------------
 @app.route("/formulario", methods=["POST"])
 def guardar_formulario():
     data = request.get_json()
 
     user_id = data.get("user_id")
-
     if not user_id:
         return jsonify({"status": "error", "message": "Falta user_id"}), 400
 
@@ -134,20 +151,20 @@ def obtener_formulario(user_id):
 
 
 # ======================================================
-#  NUEVO: OBTENER TODOS LOS FORMULARIOS (PÚBLICOS)
+# OBTENER TODOS LOS FORMULARIOS (PÚBLICOS)
 # ======================================================
 @app.route("/formularios", methods=["GET"])
 def obtener_todos_formularios():
     lista = list(formularios.find({}))
-    
+
     for f in lista:
         f["_id"] = str(f["_id"])
-    
+
     return jsonify({"status": "ok", "formularios": lista})
 
 
 # ======================================================
-#  NUEVO: GUARDAR COMENTARIO + PUNTUACIÓN
+# GUARDAR COMENTARIO + PUNTUACIÓN
 # ======================================================
 @app.route("/comentario", methods=["POST"])
 def guardar_comentario():
@@ -167,7 +184,7 @@ def guardar_comentario():
 
 
 # ======================================================
-#  NUEVO: OBTENER COMENTARIOS DE UN LUGAR
+# OBTENER COMENTARIOS DE UN LUGAR
 # ======================================================
 @app.route("/comentarios/<lugar_id>", methods=["GET"])
 def obtener_comentarios(lugar_id):
@@ -180,7 +197,7 @@ def obtener_comentarios(lugar_id):
 
 
 # ======================================================
-#  NUEVO: OBTENER PROMEDIO DE PUNTUACIÓN DE UN LUGAR
+# OBTENER PROMEDIO DE PUNTUACIÓN DE UN LUGAR
 # ======================================================
 @app.route("/rating/<lugar_id>", methods=["GET"])
 def obtener_rating(lugar_id):
