@@ -22,26 +22,41 @@ comentarios = db["comentarios"]
 def guardar_foto_en_carpeta(foto_base64, formulario_id):
     try:
         if not foto_base64:
+            print("❌ No hay foto base64 para guardar")
             return ""
             
+        # Verificar que la carpeta exists
+        if not os.path.exists("uploads"):
+            os.makedirs("uploads")
+            print("📂 Carpeta uploads creada")
+
         # Generar nombre único para el archivo
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"establecimiento_{formulario_id}_{timestamp}.jpg"
         filepath = os.path.join("uploads", filename)
         
+        print(f"📸 Guardando foto como: {filename}")
+        print(f"📂 Ruta completa: {os.path.abspath(filepath)}")
+        
         # Decodificar Base64 y guardar archivo
         if foto_base64.startswith('data:image'):
             # Si viene con prefijo data:image, lo removemos
             foto_base64 = foto_base64.split(',')[1]
+            print("🔧 Base64 con prefijo data:image - prefijo removido")
+        
+        print(f"📊 Longitud Base64: {len(foto_base64)} caracteres")
         
         photo_data = base64.b64decode(foto_base64)
+        print(f"📊 Datos de imagen decodificados: {len(photo_data)} bytes")
+        
         with open(filepath, "wb") as f:
             f.write(photo_data)
             
+        print(f"✅ Foto guardada exitosamente: {filepath}")
         return filename
         
     except Exception as e:
-        print(f"Error guardando foto: {str(e)}")
+        print(f"❌ Error guardando foto: {str(e)}")
         return ""
 
 # ======================================================
@@ -210,6 +225,18 @@ def crear_formulario():
         if not data.get("user_id"):
             return jsonify({"status": "error", "message": "user_id es requerido"}), 400
 
+        print(f"📸 ¿Viene foto en la petición? {bool(data.get('foto'))}")
+        print(f"📊 Datos recibidos: user_id={data.get('user_id')}, nombre={data.get('nombre_comercial')}")
+
+        # ✅ PRIMERO: Guardar foto en carpeta ANTES de insertar
+        foto_archivo = ""
+        if data.get("foto"):
+            # Generar ID temporal para el nombre del archivo
+            temp_id = str(ObjectId())
+            print(f"🔄 Intentando guardar foto con ID temporal: {temp_id}")
+            foto_archivo = guardar_foto_en_carpeta(data.get("foto"), temp_id)
+            print(f"📁 Resultado de guardar foto: {foto_archivo}")
+
         nuevo_formulario = {
             "user_id": data.get("user_id"),
             "nombre_comercial": data.get("nombre_comercial"),
@@ -222,7 +249,8 @@ def crear_formulario():
             "descripcion": data.get("descripcion"),
             "web": data.get("web"),
             "habitaciones": data.get("habitaciones"),
-            "foto": data.get("foto", ""),
+            "foto": data.get("foto", ""),  # Base64 (backup)
+            "foto_archivo": foto_archivo,  # ← NUEVO: Ruta del archivo
             "lat": data.get("lat", 0),
             "lng": data.get("lng", 0),
             "fecha_creacion": datetime.now()
@@ -230,24 +258,17 @@ def crear_formulario():
 
         result = formularios.insert_one(nuevo_formulario)
         formulario_id = str(result.inserted_id)
-
-        # ✅ NUEVO: Guardar foto en carpeta y actualizar el registro
-        if data.get("foto"):
-            nombre_archivo = guardar_foto_en_carpeta(data.get("foto"), formulario_id)
-            if nombre_archivo:
-                # Actualizar el formulario con la ruta del archivo
-                formularios.update_one(
-                    {"_id": result.inserted_id},
-                    {"$set": {"foto_archivo": nombre_archivo}}
-                )
+        print(f"✅ Formulario insertado en MongoDB: {formulario_id}")
+        print(f"📁 Foto archivo guardado en BD: {foto_archivo}")
 
         return jsonify({
             "status": "ok", 
             "message": "Formulario creado exitosamente",
-            "id": str(result.inserted_id)
+            "id": formulario_id
         }), 201
         
     except Exception as e:
+        print(f"❌ Error en crear_formulario: {str(e)}")
         return jsonify({"status": "error", "message": f"Error al crear formulario: {str(e)}"}), 500
 
 # ======================================================
