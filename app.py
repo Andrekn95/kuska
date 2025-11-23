@@ -17,69 +17,55 @@ formularios = db["formularios"]
 comentarios = db["comentarios"]
 
 # ======================================================
-# FUNCIÓN PARA GUARDAR FOTO EN CARPETA
+# FUNCIÓN MEJORADA PARA GUARDAR FOTO EN CARPETA
 # ======================================================
 def guardar_foto_en_carpeta(foto_base64, formulario_id):
     try:
-        if not foto_base64:
-            print("❌ No hay foto base64 para guardar")
+        if not foto_base64 or not formulario_id:
+            print("❌ Datos insuficientes para guardar foto")
             return ""
             
-        # Verificar que la carpeta exists - CON RUTA ABSOLUTA
+        # Ruta absoluta para uploads
         uploads_path = os.path.join(os.getcwd(), "uploads")
         if not os.path.exists(uploads_path):
             os.makedirs(uploads_path)
             print(f"📂 Carpeta uploads creada: {uploads_path}")
-        else:
-            print(f"📂 Carpeta uploads ya existe: {uploads_path}")
             
-        # Verificar permisos de escritura
+        # Verificar permisos
         if not os.access(uploads_path, os.W_OK):
-            print("❌ SIN PERMISOS de escritura en uploads/")
+            print("❌ Sin permisos de escritura en uploads/")
             return ""
 
-        # Generar nombre único para el archivo
+        # Generar nombre único
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"establecimiento_{formulario_id}_{timestamp}.jpg"
         filepath = os.path.join(uploads_path, filename)
         
-        print(f"📸 Guardando foto como: {filename}")
-        print(f"📂 Ruta ABSOLUTA: {filepath}")
+        print(f"📸 Guardando foto: {filename}")
         
-        # Decodificar Base64 y guardar archivo
+        # Limpiar Base64 si viene con prefijo
         if foto_base64.startswith('data:image'):
-            # Si viene con prefijo data:image, lo removemos
             foto_base64 = foto_base64.split(',')[1]
-            print("🔧 Base64 con prefijo data:image - prefijo removido")
         
-        print(f"📊 Longitud Base64: {len(foto_base64)} caracteres")
-        
-        # VERIFICAR que el Base64 es válido
+        # Decodificar y guardar
         try:
             photo_data = base64.b64decode(foto_base64)
-            print(f"📊 Datos de imagen decodificados: {len(photo_data)} bytes")
-        except Exception as decode_error:
-            print(f"❌ Error decodificando Base64: {decode_error}")
-            return ""
-        
-        # INTENTAR guardar el archivo con manejo de errores
-        try:
+            print(f"📊 Imagen decodificada: {len(photo_data)} bytes")
+            
             with open(filepath, "wb") as f:
                 f.write(photo_data)
-            print(f"✅ Foto guardada exitosamente: {filepath}")
-            
-            # VERIFICAR que el archivo se creó
+                
+            # Verificar que se creó
             if os.path.exists(filepath):
                 file_size = os.path.getsize(filepath)
-                print(f"✅ Archivo verificado: {filepath} ({file_size} bytes)")
+                print(f"✅ Foto guardada: {filepath} ({file_size} bytes)")
+                return filename
             else:
-                print("❌ Archivo NO se creó después de guardar")
+                print("❌ Archivo no se creó")
                 return ""
                 
-            return filename
-            
-        except Exception as write_error:
-            print(f"❌ Error escribiendo archivo: {write_error}")
+        except Exception as e:
+            print(f"❌ Error procesando imagen: {e}")
             return ""
         
     except Exception as e:
@@ -107,6 +93,42 @@ def debug_uploads():
             "permiso_escritura": can_write,
             "archivos": files,
             "total_archivos": len(files)
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+# ======================================================
+# VERIFICAR FORMULARIO Y FOTO
+# ======================================================
+@app.route("/debug-formulario/<form_id>")
+def debug_formulario(form_id):
+    try:
+        formulario = formularios.find_one({"_id": ObjectId(form_id)})
+        if not formulario:
+            return jsonify({"error": "Formulario no encontrado"})
+        
+        # Convertir ObjectId a string
+        formulario["_id"] = str(formulario["_id"])
+        
+        # Verificar si el archivo existe
+        foto_existe = False
+        file_info = {}
+        if formulario.get("foto_archivo"):
+            filepath = os.path.join(os.getcwd(), "uploads", formulario["foto_archivo"])
+            foto_existe = os.path.exists(filepath)
+            if foto_existe:
+                file_info = {
+                    "ruta": filepath,
+                    "tamaño": os.path.getsize(filepath),
+                    "nombre": formulario["foto_archivo"]
+                }
+        
+        return jsonify({
+            "formulario": formulario,
+            "foto_en_carpeta": foto_existe,
+            "archivo_info": file_info,
+            "tiene_foto_base64": bool(formulario.get("foto")),
+            "tiene_foto_archivo": bool(formulario.get("foto_archivo"))
         })
     except Exception as e:
         return jsonify({"error": str(e)})
@@ -265,7 +287,7 @@ def obtener_formularios():
         return jsonify({"status": "error", "message": f"Error al obtener formularios: {str(e)}"}), 500
 
 # ======================================================
-# FORMULARIOS - POST (Crear formulario)
+# FORMULARIOS - POST (Crear formulario) - VERSIÓN CORREGIDA
 # ======================================================
 @app.route("/formularios", methods=["POST"])
 def crear_formulario():
@@ -278,17 +300,8 @@ def crear_formulario():
             return jsonify({"status": "error", "message": "user_id es requerido"}), 400
 
         print(f"📸 ¿Viene foto en la petición? {bool(data.get('foto'))}")
-        print(f"📊 Datos recibidos: user_id={data.get('user_id')}, nombre={data.get('nombre_comercial')}")
 
-        # ✅ PRIMERO: Guardar foto en carpeta ANTES de insertar
-        foto_archivo = ""
-        if data.get("foto"):
-            # Generar ID temporal para el nombre del archivo
-            temp_id = str(ObjectId())
-            print(f"🔄 Intentando guardar foto con ID temporal: {temp_id}")
-            foto_archivo = guardar_foto_en_carpeta(data.get("foto"), temp_id)
-            print(f"📁 Resultado de guardar foto: {foto_archivo}")
-
+        # ✅ PRIMERO: Insertar el formulario en MongoDB para obtener el ID real
         nuevo_formulario = {
             "user_id": data.get("user_id"),
             "nombre_comercial": data.get("nombre_comercial"),
@@ -302,7 +315,7 @@ def crear_formulario():
             "web": data.get("web"),
             "habitaciones": data.get("habitaciones"),
             "foto": data.get("foto", ""),  # Base64 (backup)
-            "foto_archivo": foto_archivo,  # ← NUEVO: Ruta del archivo
+            "foto_archivo": "",  # Inicialmente vacío
             "lat": data.get("lat", 0),
             "lng": data.get("lng", 0),
             "fecha_creacion": datetime.now()
@@ -311,7 +324,23 @@ def crear_formulario():
         result = formularios.insert_one(nuevo_formulario)
         formulario_id = str(result.inserted_id)
         print(f"✅ Formulario insertado en MongoDB: {formulario_id}")
-        print(f"📁 Foto archivo guardado en BD: {foto_archivo}")
+
+        # ✅ SEGUNDO: Ahora guardar la foto con el ID REAL del formulario
+        foto_archivo = ""
+        if data.get("foto"):
+            print(f"🔄 Guardando foto con ID REAL del formulario: {formulario_id}")
+            foto_archivo = guardar_foto_en_carpeta(data.get("foto"), formulario_id)
+            print(f"📁 Resultado de guardar foto: {foto_archivo}")
+            
+            # ✅ TERCERO: Actualizar el formulario con la ruta de la foto
+            if foto_archivo:
+                formularios.update_one(
+                    {"_id": ObjectId(formulario_id)}, 
+                    {"$set": {"foto_archivo": foto_archivo}}
+                )
+                print(f"📝 Formulario actualizado con foto_archivo: {foto_archivo}")
+            else:
+                print("⚠️ No se pudo guardar la foto en carpeta")
 
         return jsonify({
             "status": "ok", 
@@ -332,6 +361,14 @@ def eliminar_formulario(form_id):
         if not form_id:
             return jsonify({"status": "error", "message": "ID de formulario requerido"}), 400
 
+        # Opcional: También eliminar el archivo físico de la foto
+        formulario = formularios.find_one({"_id": ObjectId(form_id)})
+        if formulario and formulario.get("foto_archivo"):
+            filepath = os.path.join(os.getcwd(), "uploads", formulario["foto_archivo"])
+            if os.path.exists(filepath):
+                os.remove(filepath)
+                print(f"🗑️ Archivo eliminado: {filepath}")
+
         result = formularios.delete_one({"_id": ObjectId(form_id)})
 
         if result.deleted_count == 0:
@@ -350,23 +387,39 @@ def eliminar_formulario(form_id):
 # ======================================================
 @app.route("/formularios/<form_id>", methods=["PUT"])
 def actualizar_formulario(form_id):
-    data = request.get_json()
-    update = {
-        "nombre_comercial": data.get("nombre_comercial"),
-        "tipo": data.get("tipo"),
-        "direccion": data.get("direccion"),
-        "contacto": data.get("contacto"),
-        "email": data.get("email"),
-        "descripcion": data.get("descripcion"),
-        "lat": data.get("lat"),
-        "lng": data.get("lng")
-    }
-    # Eliminar claves None si quieres
-    update = {k: v for k, v in update.items() if v is not None}
-    result = formularios.update_one({"_id": ObjectId(form_id)}, {"$set": update})
-    if result.matched_count == 1:
-        return jsonify({"status":"ok", "message":"Formulario actualizado"})
-    return jsonify({"status":"error", "message":"Formulario no encontrado"}), 404
+    try:
+        data = request.get_json()
+        update = {
+            "nombre_comercial": data.get("nombre_comercial"),
+            "tipo": data.get("tipo"),
+            "direccion": data.get("direccion"),
+            "contacto": data.get("contacto"),
+            "email": data.get("email"),
+            "descripcion": data.get("descripcion"),
+            "lat": data.get("lat"),
+            "lng": data.get("lng")
+        }
+        
+        # Manejar actualización de foto si viene en la petición
+        if data.get("foto"):
+            print(f"🔄 Actualizando foto para formulario: {form_id}")
+            foto_archivo = guardar_foto_en_carpeta(data.get("foto"), form_id)
+            if foto_archivo:
+                update["foto_archivo"] = foto_archivo
+                update["foto"] = data.get("foto")  # Mantener base64 también
+                print(f"📸 Nueva foto guardada: {foto_archivo}")
+        
+        # Eliminar claves None
+        update = {k: v for k, v in update.items() if v is not None}
+        
+        result = formularios.update_one({"_id": ObjectId(form_id)}, {"$set": update})
+        
+        if result.matched_count == 1:
+            return jsonify({"status":"ok", "message":"Formulario actualizado"})
+        return jsonify({"status":"error", "message":"Formulario no encontrado"}), 404
+        
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Error al actualizar: {str(e)}"}), 500
 
 # ======================================================
 # COMENTARIOS - POST (Crear comentario)
@@ -455,6 +508,38 @@ def descargar_foto(filename):
         return jsonify({"status": "error", "message": "Foto no encontrada"}), 404
 
 # ======================================================
+# LIMPIAR FOTOS HUÉRFANAS (Opcional)
+# ======================================================
+@app.route("/limpiar-fotos")
+def limpiar_fotos():
+    try:
+        uploads_path = os.path.join(os.getcwd(), "uploads")
+        if not os.path.exists(uploads_path):
+            return jsonify({"status": "ok", "message": "No existe carpeta uploads"})
+        
+        # Obtener todos los formularios
+        formularios_lista = list(formularios.find({}, {"foto_archivo": 1}))
+        fotos_validas = {f["foto_archivo"] for f in formularios_lista if f.get("foto_archivo")}
+        
+        # Listar archivos en uploads
+        archivos = os.listdir(uploads_path)
+        eliminados = 0
+        
+        for archivo in archivos:
+            if archivo not in fotos_validas:
+                filepath = os.path.join(uploads_path, archivo)
+                os.remove(filepath)
+                eliminados += 1
+                print(f"🗑️ Eliminado archivo huérfano: {archivo}")
+        
+        return jsonify({
+            "status": "ok", 
+            "message": f"Limpieza completada. Eliminados: {eliminados} archivos huérfanos"
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)})
+
+# ======================================================
 # MANEJO DE ERRORES
 # ======================================================
 @app.errorhandler(404)
@@ -471,18 +556,20 @@ def internal_error(error):
 if __name__ == "__main__":
     print("🚀 Servidor Flask iniciado en http://0.0.0.0:5000")
     print("📊 Endpoints disponibles:")
-    print("   GET  /usuarios     - Listar usuarios")
-    print("   POST /usuarios     - Crear usuario")
-    print("   DELETE /usuarios/:id - Eliminar usuario")
-    print("   GET  /login        - Verificar login")
-    print("   POST /login        - Iniciar sesión")
-    print("   GET  /formularios  - Listar formularios")
-    print("   POST /formularios  - Crear formulario")
-    print("   DELETE /formularios/:id - Eliminar formulario")
-    print("   PUT  /formularios/:id - Actualizar formulario")
-    print("   POST /comentario   - Crear comentario")
-    print("   GET  /comentarios/:id - Obtener comentarios")
-    print("   GET  /rating/:id   - Obtener rating")
-    print("   GET  /uploads/:filename - Descargar foto")
-    print("   GET  /debug-uploads - Verificar carpeta uploads")
+    print("   GET  /usuarios           - Listar usuarios")
+    print("   POST /usuarios           - Crear usuario")
+    print("   DELETE /usuarios/:id     - Eliminar usuario")
+    print("   GET  /login              - Verificar login")
+    print("   POST /login              - Iniciar sesión")
+    print("   GET  /formularios        - Listar formularios")
+    print("   POST /formularios        - Crear formulario")
+    print("   DELETE /formularios/:id  - Eliminar formulario")
+    print("   PUT  /formularios/:id    - Actualizar formulario")
+    print("   POST /comentario         - Crear comentario")
+    print("   GET  /comentarios/:id    - Obtener comentarios")
+    print("   GET  /rating/:id         - Obtener rating")
+    print("   GET  /uploads/:filename  - Descargar foto")
+    print("   GET  /debug-uploads      - Verificar carpeta uploads")
+    print("   GET  /debug-formulario/:id - Verificar formulario y foto")
+    print("   GET  /limpiar-fotos      - Limpiar fotos huérfanas")
     app.run(host="0.0.0.0", port=5000, debug=True)
