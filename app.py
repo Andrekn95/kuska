@@ -17,23 +17,41 @@ formularios = db["formularios"]
 comentarios = db["comentarios"]
 
 # ======================================================
-# CREAR CARPETA UPLOADS AL INICIAR SERVIDOR
+# CONFIGURACIÓN CARPETA UPLOADS
 # ======================================================
 UPLOADS_FOLDER = os.path.join(os.getcwd(), "uploads")
 
+# Crear carpeta si no existe al iniciar
 if not os.path.exists(UPLOADS_FOLDER):
     os.makedirs(UPLOADS_FOLDER)
-    print(f"📁 Carpeta creada: {UPLOADS_FOLDER}")
+    print(f"📁 Carpeta UPLOADS creada: {UPLOADS_FOLDER}")
 else:
-    print(f"📁 Carpeta de uploads OK: {UPLOADS_FOLDER}")
+    print(f"📁 Carpeta UPLOADS ya existe: {UPLOADS_FOLDER}")
+
+# Verificar permisos de escritura
+if os.access(UPLOADS_FOLDER, os.W_OK):
+    print("✅ Permisos de escritura en UPLOADS: OK")
+else:
+    print("❌ SIN permisos de escritura en UPLOADS")
 
 # ======================================================
-# FUNCIÓN PARA GUARDAR FOTO EN CARPETA
+# FUNCIÓN MEJORADA PARA GUARDAR FOTO
 # ======================================================
 def guardar_foto_en_carpeta(foto_base64, formulario_id):
     try:
+        print(f"🔄 Iniciando guardado de foto para formulario: {formulario_id}")
+        
         if not foto_base64:
             print("❌ No hay foto base64 para guardar")
+            return ""
+
+        # Verificar que la carpeta existe y tiene permisos
+        if not os.path.exists(UPLOADS_FOLDER):
+            os.makedirs(UPLOADS_FOLDER)
+            print(f"📁 Carpeta UPLOADS creada: {UPLOADS_FOLDER}")
+
+        if not os.access(UPLOADS_FOLDER, os.W_OK):
+            print("❌ SIN PERMISOS de escritura en UPLOADS")
             return ""
 
         # Limpiar cabecera base64 si viene con prefijo
@@ -46,7 +64,9 @@ def guardar_foto_en_carpeta(foto_base64, formulario_id):
         filename = f"foto_{formulario_id}_{timestamp}.jpg"
         filepath = os.path.join(UPLOADS_FOLDER, filename)
 
-        print(f"📸 Intentando guardar foto: {filename}")
+        print(f"📸 Guardando foto como: {filename}")
+        print(f"📂 Ruta completa: {filepath}")
+        print(f"📊 Longitud Base64: {len(foto_base64)} caracteres")
 
         # Decodificar y guardar archivo
         try:
@@ -55,36 +75,42 @@ def guardar_foto_en_carpeta(foto_base64, formulario_id):
             
             with open(filepath, "wb") as f:
                 f.write(img_bytes)
-                
-            # Verificar que se creó
-            if os.path.exists(filepath):
-                file_size = os.path.getsize(filepath)
-                print(f"✅ Foto guardada en carpeta: {filepath} ({file_size} bytes)")
-                return filename
-            else:
-                print("❌ Archivo no se creó después de guardar")
-                return ""
+            print(f"💾 Archivo escrito en: {filepath}")
                 
         except Exception as decode_error:
             print(f"❌ Error decodificando base64: {decode_error}")
             return ""
 
+        # Verificar que el archivo se creó
+        if os.path.exists(filepath):
+            file_size = os.path.getsize(filepath)
+            print(f"✅ Foto guardada EXITOSAMENTE: {filename} ({file_size} bytes)")
+            return filename
+        else:
+            print("❌ ERROR: Archivo no se creó después de guardar")
+            return ""
+
     except Exception as e:
-        print(f"❌ Error en guardar_foto_en_carpeta: {e}")
+        print(f"❌ Error CRÍTICO en guardar_foto_en_carpeta: {e}")
         return ""
 
 # ======================================================
-# RUTAS DEBUG
+# RUTAS DEBUG MEJORADAS
 # ======================================================
 @app.route("/debug-uploads")
 def debug_uploads():
     try:
-        archivos = os.listdir(UPLOADS_FOLDER) if os.path.exists(UPLOADS_FOLDER) else []
+        archivos = []
+        if os.path.exists(UPLOADS_FOLDER):
+            archivos = os.listdir(UPLOADS_FOLDER)
+        
         return jsonify({
             "ruta_uploads": UPLOADS_FOLDER,
-            "existe": os.path.exists(UPLOADS_FOLDER),
+            "existe_carpeta": os.path.exists(UPLOADS_FOLDER),
+            "permiso_escritura": os.access(UPLOADS_FOLDER, os.W_OK) if os.path.exists(UPLOADS_FOLDER) else False,
             "archivos": archivos,
-            "total": len(archivos)
+            "total_archivos": len(archivos),
+            "ruta_actual": os.getcwd()
         })
     except Exception as e:
         return jsonify({"error": str(e)})
@@ -98,18 +124,72 @@ def debug_formulario(form_id):
         
         formulario["_id"] = str(formulario["_id"])
         
-        # Verificar si el archivo existe
+        # Verificar archivo físico
         foto_en_carpeta = False
+        archivo_info = {}
         if formulario.get("foto_archivo"):
             filepath = os.path.join(UPLOADS_FOLDER, formulario["foto_archivo"])
             foto_en_carpeta = os.path.exists(filepath)
+            if foto_en_carpeta:
+                archivo_info = {
+                    "ruta": filepath,
+                    "tamaño": os.path.getsize(filepath),
+                    "existe": True
+                }
+            else:
+                archivo_info = {
+                    "ruta": filepath,
+                    "existe": False
+                }
         
         return jsonify({
-            "formulario": formulario,
-            "foto_en_carpeta": foto_en_carpeta,
+            "formulario_id": str(formulario["_id"]),
             "tiene_foto_base64": bool(formulario.get("foto")),
-            "tiene_foto_archivo": bool(formulario.get("foto_archivo"))
+            "tiene_foto_archivo": bool(formulario.get("foto_archivo")),
+            "nombre_archivo": formulario.get("foto_archivo", ""),
+            "foto_en_carpeta": foto_en_carpeta,
+            "archivo_info": archivo_info
         })
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+@app.route("/debug-completo")
+def debug_completo():
+    try:
+        # Información del sistema
+        info = {
+            "sistema": {
+                "ruta_actual": os.getcwd(),
+                "plataforma": os.name,
+                "separador": os.sep
+            },
+            "uploads": {
+                "ruta": UPLOADS_FOLDER,
+                "existe": os.path.exists(UPLOADS_FOLDER),
+                "permiso_escritura": os.access(UPLOADS_FOLDER, os.W_OK),
+                "archivos": os.listdir(UPLOADS_FOLDER) if os.path.exists(UPLOADS_FOLDER) else []
+            },
+            "formularios_db": {
+                "total": formularios.count_documents({}),
+                "con_foto_base64": formularios.count_documents({"foto": {"$ne": ""}}),
+                "con_foto_archivo": formularios.count_documents({"foto_archivo": {"$ne": ""}})
+            },
+            "test_escritura": None
+        }
+        
+        # Test de escritura
+        test_file = os.path.join(UPLOADS_FOLDER, "test_escritura.txt")
+        try:
+            with open(test_file, "w") as f:
+                f.write("Test de escritura - " + datetime.now().isoformat())
+            info["test_escritura"] = {"exito": True, "archivo": test_file}
+            # Limpiar archivo de test
+            if os.path.exists(test_file):
+                os.remove(test_file)
+        except Exception as e:
+            info["test_escritura"] = {"exito": False, "error": str(e)}
+        
+        return jsonify(info)
     except Exception as e:
         return jsonify({"error": str(e)})
 
@@ -207,7 +287,7 @@ def login():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 # ======================================================
-# FORMULARIOS - CORREGIDO PARA GUARDAR AMBOS
+# FORMULARIOS - VERSIÓN CORREGIDA CON MÁS LOGS
 # ======================================================
 @app.route("/formularios", methods=["POST"])
 def crear_formulario():
@@ -216,10 +296,16 @@ def crear_formulario():
         if not data:
             return jsonify({"status": "error", "message": "No se recibieron datos"}), 400
 
+        print("=" * 50)
+        print("📋 INICIANDO CREACIÓN DE FORMULARIO")
+        print("=" * 50)
+        
         print(f"📸 ¿Viene foto en la petición? {bool(data.get('foto'))}")
-        print(f"📊 Datos recibidos: user_id={data.get('user_id')}, nombre={data.get('nombre_comercial')}")
+        print(f"📊 Longitud del base64: {len(data.get('foto', '')) if data.get('foto') else 0} caracteres")
+        print(f"👤 User ID: {data.get('user_id')}")
+        print(f"🏢 Nombre: {data.get('nombre_comercial')}")
 
-        # ✅ PRIMERO: Insertar el formulario en MongoDB (CON base64)
+        # ✅ PRIMERO: Insertar el formulario en MongoDB
         form = {
             "user_id": data.get("user_id"),
             "nombre_comercial": data.get("nombre_comercial"),
@@ -244,8 +330,9 @@ def crear_formulario():
         print(f"✅ Formulario insertado en MongoDB: {form_id}")
 
         # ✅ SEGUNDO: Guardar foto en carpeta (si viene)
+        filename = ""
         if data.get("foto"):
-            print(f"🔄 Guardando foto en carpeta con ID: {form_id}")
+            print(f"🔄 Intentando guardar foto en carpeta con ID: {form_id}")
             filename = guardar_foto_en_carpeta(data["foto"], form_id)
             
             if filename:
@@ -256,11 +343,19 @@ def crear_formulario():
                 )
                 print(f"📝 Formulario actualizado con foto_archivo: {filename}")
             else:
-                print("⚠️ No se pudo guardar la foto en carpeta, pero el base64 está en MongoDB")
+                print("⚠️ NO se pudo guardar la foto en carpeta, pero el base64 está en MongoDB")
+        else:
+            print("ℹ️ No hay foto para guardar en carpeta")
+
+        print("=" * 50)
+        print("🎯 FINALIZANDO CREACIÓN DE FORMULARIO")
+        print(f"📁 Foto guardada en carpeta: {bool(filename)}")
+        print("=" * 50)
 
         return jsonify({
             "status": "ok", 
             "id": form_id,
+            "foto_guardada_en_carpeta": bool(filename),
             "message": "Formulario creado exitosamente"
         })
 
@@ -361,5 +456,6 @@ def descargar_foto(filename):
 # ======================================================
 if __name__ == "__main__":
     print("🚀 Servidor corriendo en http://0.0.0.0:5000")
-    print("📁 Ruta de uploads:", UPLOADS_FOLDER)
+    print("📁 Ruta de UPLOADS:", UPLOADS_FOLDER)
+    print("📁 Ruta actual:", os.getcwd())
     app.run(host="0.0.0.0", port=5000, debug=True)
