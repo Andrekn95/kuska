@@ -25,18 +25,26 @@ def guardar_foto_en_carpeta(foto_base64, formulario_id):
             print("❌ No hay foto base64 para guardar")
             return ""
             
-        # Verificar que la carpeta exists
-        if not os.path.exists("uploads"):
-            os.makedirs("uploads")
-            print("📂 Carpeta uploads creada")
+        # Verificar que la carpeta exists - CON RUTA ABSOLUTA
+        uploads_path = os.path.join(os.getcwd(), "uploads")
+        if not os.path.exists(uploads_path):
+            os.makedirs(uploads_path)
+            print(f"📂 Carpeta uploads creada: {uploads_path}")
+        else:
+            print(f"📂 Carpeta uploads ya existe: {uploads_path}")
+            
+        # Verificar permisos de escritura
+        if not os.access(uploads_path, os.W_OK):
+            print("❌ SIN PERMISOS de escritura en uploads/")
+            return ""
 
         # Generar nombre único para el archivo
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"establecimiento_{formulario_id}_{timestamp}.jpg"
-        filepath = os.path.join("uploads", filename)
+        filepath = os.path.join(uploads_path, filename)
         
         print(f"📸 Guardando foto como: {filename}")
-        print(f"📂 Ruta completa: {os.path.abspath(filepath)}")
+        print(f"📂 Ruta ABSOLUTA: {filepath}")
         
         # Decodificar Base64 y guardar archivo
         if foto_base64.startswith('data:image'):
@@ -46,18 +54,62 @@ def guardar_foto_en_carpeta(foto_base64, formulario_id):
         
         print(f"📊 Longitud Base64: {len(foto_base64)} caracteres")
         
-        photo_data = base64.b64decode(foto_base64)
-        print(f"📊 Datos de imagen decodificados: {len(photo_data)} bytes")
+        # VERIFICAR que el Base64 es válido
+        try:
+            photo_data = base64.b64decode(foto_base64)
+            print(f"📊 Datos de imagen decodificados: {len(photo_data)} bytes")
+        except Exception as decode_error:
+            print(f"❌ Error decodificando Base64: {decode_error}")
+            return ""
         
-        with open(filepath, "wb") as f:
-            f.write(photo_data)
+        # INTENTAR guardar el archivo con manejo de errores
+        try:
+            with open(filepath, "wb") as f:
+                f.write(photo_data)
+            print(f"✅ Foto guardada exitosamente: {filepath}")
             
-        print(f"✅ Foto guardada exitosamente: {filepath}")
-        return filename
+            # VERIFICAR que el archivo se creó
+            if os.path.exists(filepath):
+                file_size = os.path.getsize(filepath)
+                print(f"✅ Archivo verificado: {filepath} ({file_size} bytes)")
+            else:
+                print("❌ Archivo NO se creó después de guardar")
+                return ""
+                
+            return filename
+            
+        except Exception as write_error:
+            print(f"❌ Error escribiendo archivo: {write_error}")
+            return ""
         
     except Exception as e:
-        print(f"❌ Error guardando foto: {str(e)}")
+        print(f"❌ Error general guardando foto: {str(e)}")
         return ""
+
+# ======================================================
+# VERIFICAR CARPETA UPLOADS
+# ======================================================
+@app.route("/debug-uploads")
+def debug_uploads():
+    try:
+        uploads_path = os.path.join(os.getcwd(), "uploads")
+        exists = os.path.exists(uploads_path)
+        can_write = os.access(uploads_path, os.W_OK) if exists else False
+        
+        files = []
+        if exists:
+            files = os.listdir(uploads_path)
+        
+        return jsonify({
+            "ruta_actual": os.getcwd(),
+            "ruta_uploads": uploads_path,
+            "carpeta_existe": exists,
+            "permiso_escritura": can_write,
+            "archivos": files,
+            "total_archivos": len(files)
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)})
 
 # ======================================================
 # RUTA PRINCIPAL
@@ -432,4 +484,5 @@ if __name__ == "__main__":
     print("   GET  /comentarios/:id - Obtener comentarios")
     print("   GET  /rating/:id   - Obtener rating")
     print("   GET  /uploads/:filename - Descargar foto")
+    print("   GET  /debug-uploads - Verificar carpeta uploads")
     app.run(host="0.0.0.0", port=5000, debug=True)
