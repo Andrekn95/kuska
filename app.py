@@ -1,7 +1,9 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from bson import ObjectId
 from datetime import datetime
+import base64
+import os
 
 # Importar la conexión a MongoDB
 from database import db  
@@ -13,6 +15,34 @@ CORS(app)
 usuarios = db["usuarios"]
 formularios = db["formularios"]
 comentarios = db["comentarios"]
+
+# ======================================================
+# FUNCIÓN PARA GUARDAR FOTO EN CARPETA
+# ======================================================
+def guardar_foto_en_carpeta(foto_base64, formulario_id):
+    try:
+        if not foto_base64:
+            return ""
+            
+        # Generar nombre único para el archivo
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"establecimiento_{formulario_id}_{timestamp}.jpg"
+        filepath = os.path.join("uploads", filename)
+        
+        # Decodificar Base64 y guardar archivo
+        if foto_base64.startswith('data:image'):
+            # Si viene con prefijo data:image, lo removemos
+            foto_base64 = foto_base64.split(',')[1]
+        
+        photo_data = base64.b64decode(foto_base64)
+        with open(filepath, "wb") as f:
+            f.write(photo_data)
+            
+        return filename
+        
+    except Exception as e:
+        print(f"Error guardando foto: {str(e)}")
+        return ""
 
 # ======================================================
 # RUTA PRINCIPAL
@@ -199,6 +229,17 @@ def crear_formulario():
         }
 
         result = formularios.insert_one(nuevo_formulario)
+        formulario_id = str(result.inserted_id)
+
+        # ✅ NUEVO: Guardar foto en carpeta y actualizar el registro
+        if data.get("foto"):
+            nombre_archivo = guardar_foto_en_carpeta(data.get("foto"), formulario_id)
+            if nombre_archivo:
+                # Actualizar el formulario con la ruta del archivo
+                formularios.update_one(
+                    {"_id": result.inserted_id},
+                    {"$set": {"foto_archivo": nombre_archivo}}
+                )
 
         return jsonify({
             "status": "ok", 
@@ -231,14 +272,9 @@ def eliminar_formulario(form_id):
     except Exception as e:
         return jsonify({"status": "error", "message": "ID de formulario inválido"}), 400
 
-
-
 # ======================================================
 # FORMULARIO - UPDATE (EDITAR formularios)
 # ======================================================
-
-
-
 @app.route("/formularios/<form_id>", methods=["PUT"])
 def actualizar_formulario(form_id):
     data = request.get_json()
@@ -258,6 +294,7 @@ def actualizar_formulario(form_id):
     if result.matched_count == 1:
         return jsonify({"status":"ok", "message":"Formulario actualizado"})
     return jsonify({"status":"error", "message":"Formulario no encontrado"}), 404
+
 # ======================================================
 # COMENTARIOS - POST (Crear comentario)
 # ======================================================
@@ -335,6 +372,16 @@ def obtener_rating(lugar_id):
         return jsonify({"status": "error", "message": f"Error al calcular rating: {str(e)}"}), 500
 
 # ======================================================
+# SERVIR FOTOS DESCARGA
+# ======================================================
+@app.route("/uploads/<filename>")
+def descargar_foto(filename):
+    try:
+        return send_from_directory("uploads", filename)
+    except Exception as e:
+        return jsonify({"status": "error", "message": "Foto no encontrada"}), 404
+
+# ======================================================
 # MANEJO DE ERRORES
 # ======================================================
 @app.errorhandler(404)
@@ -359,7 +406,9 @@ if __name__ == "__main__":
     print("   GET  /formularios  - Listar formularios")
     print("   POST /formularios  - Crear formulario")
     print("   DELETE /formularios/:id - Eliminar formulario")
+    print("   PUT  /formularios/:id - Actualizar formulario")
     print("   POST /comentario   - Crear comentario")
     print("   GET  /comentarios/:id - Obtener comentarios")
     print("   GET  /rating/:id   - Obtener rating")
+    print("   GET  /uploads/:filename - Descargar foto")
     app.run(host="0.0.0.0", port=5000, debug=True)
